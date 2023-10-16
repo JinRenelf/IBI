@@ -15,10 +15,35 @@ import scipy.stats as stats
 from tqdm import tqdm
 import logging
 
-# logging.basicConfig(filename="IBI_pytorch.log",level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+# logging.basicConfig(filename="IBI_pytorch.log", level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.getLogger().setLevel(logging.INFO)
 
-def read_variantsF(variants_path_file, variants_size=None):
+
+def read_variantsF_efficient(variants_path_file):
+    """
+    read the large genomic file (row_SNPs x column_subjects) using pandas
+    but need to convert file to npy
+    :param variants_path_file:
+    :param variants_size: if variants_size=None,select all the variants
+    :return: subIDs, varIDs, variants_tensor, df  # list, list, array and dataframe
+    """
+
+    # this will turn the first column of varIDs into index thus df.columns will only include subIDs
+    df = pd.read_csv(variants_path_file, index_col=0)
+
+    varIDs = list(df.index)
+    subIDs = list(int(x) for x in df.columns)
+    variants = np.array(df, dtype=np.int8)  # Somehow, np.int8 does not work here.
+    A0 = np.ones(len(subIDs), dtype=np.int8)
+    variants = np.row_stack((A0, variants))
+    varIDs.insert(0, 'A0')
+    # df = pd.DataFrame(variants, index=varIDs, columns=subIDs, dtype=np.int8)
+    df = pd.DataFrame()
+    variants_tensor = torch.tensor(variants, dtype=torch.float16)
+    return subIDs, varIDs, variants_tensor, df
+
+
+def read_variantsF(variants_path_file):
     """
     read the large genomic file (row_SNPs x column_subjects) using pandas
     if the genomic file is too large,can cover the csv file to pickle file.
@@ -26,51 +51,23 @@ def read_variantsF(variants_path_file, variants_size=None):
     :param variants_size: if variants_size=None,select all the variants
     :return: subIDs, varIDs, variants_tensor, df  # list, list, array and dataframe
     """
-    if variants_path_file.split(".")[-1] == "csv":
-        # this will turn the first column of varIDs into index thus df.columns will only include subIDs
-        df = pd.read_csv(variants_path_file, index_col=0)
-    else:
-        df = pd.read_pickle(variants_path_file)
+    varIDs_file = open(os.path.join(variants_path_file, "varIDs.txt"), "r")
+    varIDs = varIDs_file.read().split("\n")
+    subIDs_file = open(os.path.join(variants_path_file, "subIDs.txt"), "r")
+    subIDs = subIDs_file.read().split("\n")
+    subIDs = list(int(x) for x in subIDs)
+    variants = np.load(os.path.join(variants_path_file, "data.npy"))
 
-    if variants_size != None:
-        df = df.iloc[:variants_size, :]
-    varIDs = list(df.index)
-    subIDs = list(int(x) for x in df.columns)
-    variants = np.array(df, dtype=np.int8)  # Somehow, np.int8 does not work here.
     A0 = np.ones(len(subIDs), dtype=np.int8)
     variants = np.row_stack((A0, variants))
     varIDs.insert(0, 'A0')
-    df = pd.DataFrame(variants, index=varIDs, columns=subIDs, dtype=np.int8)
-    variants_tensor = torch.tensor(variants, dtype=torch.float16)
-    return subIDs, varIDs, variants_tensor, df
+    # when variants data is large, df will consume a large amount of memory,
+    # but df is no being used, set df=pd.Dataframe()
+    df = pd.DataFrame()
+    # df = pd.DataFrame(variants, index=varIDs, columns=subIDs, dtype=np.int8)
+    variants_tensor = torch.as_tensor(variants, dtype=torch.float16)
 
-# def read_variantsF(variants_path_file, variants_size=None):
-#     """
-#     read the large genomic file (row_SNPs x column_subjects) using pandas
-#     if the genomic file is too large,can cover the csv file to pickle file.
-#     :param variants_path_file:
-#     :param variants_size: if variants_size=None,select all the variants
-#     :return: subIDs, varIDs, variants_tensor, df  # list, list, array and dataframe
-#     """
-#     varIDs_file = open(os.path.join(variants_path_file, "varIDs.txt"), "r")
-#     varIDs = varIDs_file.read().split("\n")
-#     subIDs_file = open(os.path.join(variants_path_file, "subIDs.txt"), "r")
-#     subIDs = subIDs_file.read().split("\n")
-#     subIDs = list(int(x) for x in subIDs)
-#     variants = np.load(os.path.join(variants_path_file, "data.npy"))
-#
-#     A0 = np.ones(len(subIDs), dtype=np.int8)
-#     variants = np.row_stack((A0, variants))
-#     varIDs.insert(0, 'A0')
-#     # TODO df no use may use too much meomary
-#     df = pd.DataFrame()
-#     # df = pd.DataFrame(variants, index=varIDs, columns=subIDs, dtype=np.int8)
-#     variants_tensor = torch.tensor(variants, dtype=torch.float16)
-#
-#     if variants_size is not None:
-#         varIDs = varIDs[:variants_size+1]
-#         variants_tensor = variants_tensor[:variants_size+1,:]
-#     return subIDs, varIDs, variants_tensor, df
+    return subIDs, varIDs, variants_tensor, df
 
 
 def read_traitsF(traits_path_file):
@@ -84,7 +81,7 @@ def read_traitsF(traits_path_file):
     traits = pd.read_csv(traits_path_file, index_col=0)
     subIDs = list(traits.index)
     traitIDs = traits.columns
-    traits_tensor = torch.tensor(traits.values, dtype=torch.float16)
+    traits_tensor = torch.as_tensor(traits.values, dtype=torch.float16)
     # np.int8 has changed the type to int8; when using int8, the subIDs become negative.
     #     print(np.sum(traits)) # sum gives odd results of -94.
     return subIDs, traitIDs, traits_tensor  # list, array
@@ -93,36 +90,18 @@ def read_traitsF(traits_path_file):
 def GDsearch_all(traits_tensor, variants_tensor):
     """
     Get all the stats for all the variants in any given population for multiple traits;
-    particulary used for the entire population;
-    Get the nxk matrix of traits==0 and the nxk matrix of traits==1 (n,#subjects;k,#traits)
-    if no individuals are in V0 group when the passed variants is [], the V0D0 counts as well as lgM will be 0.
+    particulary used for the entire population
 
     :param traits_tensor: traits n*k
     :param variants_tensor: variants m*n
     :return:
     """
-    bpMask0 = traits_tensor == 0
-    d0 = torch.sum(bpMask0)
-    bpMask0 = bpMask0.to(torch.float16)
-
-    bpMask1 = traits_tensor == 1
-    d1 = torch.sum(bpMask1)
-    bpMask1 = bpMask1.to(torch.float16)
-
-    ### Get the mxn vector of snp==0 and the mxn vector of snp==1
-    snpMask0 = variants_tensor == 0
-    snpMask0 = snpMask0.to(torch.float16)
-
-    snpMask1 = variants_tensor == 1
-    snpMask1 = snpMask1.to(torch.float16)
-
-    # Get the four mx1 vector as below: m is # of SNPs in the dataset; for each SNP, the corresponding 4 values
-    # from the 4 vectors make up the 2x2 tables between SNP and hypertension
-    # Jin V1D1:p(V=1,D=1)calculate the Snp(V)=1 and tarit(D)=1，each Snp's individual num
-    V0D0 = snpMask0 @ bpMask0
-    V1D0 = snpMask1 @ bpMask0
-    V0D1 = snpMask0 @ bpMask1
-    V1D1 = snpMask1 @ bpMask1
+    variants_sum = variants_tensor.sum(axis=1).reshape(-1, 1)
+    traits_sum = traits_tensor.sum(axis=0).reshape(1, -1)
+    V1D1 = variants_tensor @ traits_tensor
+    V1D0 = torch.ones_like(V1D1) * variants_sum - V1D1
+    V0D1 = torch.ones_like(V1D1) * traits_sum - V1D1
+    V0D0 = torch.ones_like(V1D0) * variants_tensor.shape[1] - torch.ones_like(V1D0) * traits_sum - V1D0
 
     # GiVen the Dirichlet Distributions we are using,
     # the expectation of these conditional probabilities is as follows: prior probability
@@ -156,7 +135,35 @@ def GDsearch_all(traits_tensor, variants_tensor):
     return RR, lgM, max_value, max_index
 
 
-def lgMcal(variants_tensor, traits_tensor, varID, use_oneTopGD, topGD_index):
+def cal_lgM(variants_use, weights, traits_tensor, device):
+    BP_V = weights.T * traits_tensor
+    BP_V_sum = BP_V.sum(axis=0).reshape(1, -1)
+    BP_V_xor = (torch.ones(traits_tensor.shape, device=device, dtype=torch.float16) - traits_tensor) * weights.T
+    BP_V_xor_sum = BP_V_xor.sum(axis=0).reshape(1, -1)
+
+    V1D1 = variants_use @ BP_V
+    V1D0 = variants_use @ BP_V_xor
+    V0D1 = torch.ones_like(V1D1) * BP_V_sum - V1D1
+    V0D0 = torch.ones_like(V1D0) * BP_V_xor_sum - V1D0
+
+    lgM = torch.lgamma(torch.tensor(2.0)) - torch.lgamma(2.0 + V0D1 + V0D0)
+    lgM += torch.lgamma(1.0 + V0D0) - torch.lgamma(torch.tensor(1.0))
+    lgM += torch.lgamma(1.0 + V0D1) - torch.lgamma(torch.tensor(1.0))
+
+    # when j=1 (V=1)
+    lgM += torch.lgamma(torch.tensor(2.0)) - torch.lgamma(2.0 + V1D1 + V1D0)
+    lgM += torch.lgamma(1.0 + V1D0) - torch.lgamma(torch.tensor(1.0))
+    lgM += torch.lgamma(1.0 + V1D1) - torch.lgamma(torch.tensor(1.0))
+
+    if variants_tensor.ndim == 1:
+        # lgM is #traits x 1;
+        lgM = lgM.reshape(1, lgM.shape[0])
+
+    # print("V1D1\n:{},\nV1D0\n:{},\nV0D1\n:{},\nV0D0\n:{},\nlgM:{}".format(V1D1, V1D0, V0D1, V0D0,lgM))
+    return lgM
+
+
+def lgMcal(variants_tensor, traits_tensor, varID, use_oneTopGD, topGD_index, device):
     """
 
     :param varID:
@@ -165,29 +172,16 @@ def lgMcal(variants_tensor, traits_tensor, varID, use_oneTopGD, topGD_index):
     :return:
     """
     i = varIDs.index(varID)
-    # identify the index of patients that have this particular variant Vs=1
-    index1 = variants_tensor[i, :] == 1
-    index0 = variants_tensor[i, :] == 0
+    variants_selected = variants_tensor[i, :].reshape(1, -1)
+    # when variants=1, calculate lgMv1_SD
+    variants_use_1 = variants_selected
+    weights_1 = variants_selected
+    lgMv1_SD = cal_lgM(variants_use_1, weights_1, traits_tensor, device)
 
-    if use_oneTopGD:
-        # we will only consider and search over all the unique topGDs from all the traits;
-        V0 = variants_tensor[topGD_index][:, index0]
-        # thus one topGD for trait1 may be selected as the sGD for trait2;variants[topGD_index] is mxn
-    else:
-        # V0 will be [] and its shape will be (0,) if index0 is all false
-        V0 = variants_tensor[:, index0]
-
-    # 2478 subjects' hypertension status who have v=1 for this SNP （2478,) and may have HTN=0 or HTN=1
-    BP_V1 = traits_tensor[index1]
-    # (5290-2478) subjects' hypertension status(1 or 0) who have v=0 for this SNP
-    BP_V0 = traits_tensor[index0]
-    # print("varID:{}".format(varID))
-    lgMv1_SD = DriverSearch(BP_V1, variants_tensor[i, index1])[0]
-    # this should be as efficient as SD_lgM_V1; only calculates one marginal assuming SD as the cause, P(D|SD->HT)
-    # with [0], the original 2D array, array([[-3127.91831177,...]]),
-    # becomes the format of 1D array, array([-3127.91831177,...]),thus consistent with the other output values
-    # lgM_v0 is the 2D array; kxk if topGD; m_variants x k_traits if sGD
-    lgMv0 = DriverSearch(BP_V0, V0)
+    # when variants=0
+    variants_use_0 = variants_tensor
+    weights_0 = torch.ones(variants_selected.shape, dtype=torch.float16, device=device) - variants_selected
+    lgMv0 = cal_lgM(variants_use_0, weights_0, traits_tensor, device)
 
     # collect the lgMv0_topGD for each trait in a 1D array; the lgM value for V0 group when using topGD as the driver
     lgMv0_topGD = []
@@ -232,60 +226,7 @@ def lgMcal(variants_tensor, traits_tensor, varID, use_oneTopGD, topGD_index):
         lgM_v1v0 = lgMv1_SD + lgMv0_topGD
     else:
         lgM_v1v0 = lgMv1_SD + lgMv0_sGD
-    # print(varID,lgMv1_SD,lgMv0_sGD)
     return lgMv1_SD, lgMv0_sGD, lgMv0_topGD, lgM_v1v0, sGD, r, i, varID
-
-
-def DriverSearch(traits_tensor, variants_tensor):
-    """
-    Calcuate and return the lgM for all the drivers or any driver for any given population for multiple traits
-    Get the max/min GD and SD as well as their lgM; this can be done in the lgM_cal function so this function can stay the same
-    Get the nxk matrix of traits==0 and the nxk matrix of traits==1 (n,#subjects;k,#traits; thus capable of working with multipe traits)
-    if no individuals are in V0 group when the passed variants is [], the V0D0 counts as well as lgM will be 0; the max value/index are both turned as 0
-    no other SNPs except A0 have a constant value since those have been removed in the preprocessing step;
-    :param traits:
-    :param variants:
-    :return: lgM is a 2D array of #variants x #traits with print(np.shape(lgM))
-    """
-    bpMask0 = traits_tensor == 0
-    bpMask0 = bpMask0.to(torch.float16)
-    # 930 HTN and 4360 non-HTN making a totla of 5290 subjects
-    d0 = torch.sum(bpMask0)
-
-    bpMask1 = traits_tensor == 1
-    bpMask1 = bpMask1.to(torch.float16)
-    d1 = torch.sum(bpMask1)
-
-    # Get the mxn vector of snp==0 and the mxn vector of snp==1
-    snpMask0 = variants_tensor == 0
-    snpMask0 = snpMask0.to(torch.float16)
-
-    snpMask1 = variants_tensor == 1
-    snpMask1 = snpMask1.to(torch.float16)
-
-    # Get the four mx1 vector as below: m is # of SNPs in the dataset; for each SNP, the corresponding 4 values
-    # from the 4 vectors make up the 2x2 tables between SNP and hypertension
-    V0D0 = snpMask0 @ bpMask0  # snpMask0, variants_row x subjects_column
-    V1D0 = snpMask1 @ bpMask0  # bpMask0, subjects_row x traits_column
-    V0D1 = snpMask0 @ bpMask1
-    V1D1 = snpMask1 @ bpMask1
-
-    # Calculate the log Marginal LikelihooD for all the SNPs in the matrix based on the collected counts and equation
-    # 5 in the worD file when j=0 (V=0)
-    lgM = torch.lgamma(torch.tensor(2.0)) - torch.lgamma(2.0 + V0D1 + V0D0)
-    lgM += torch.lgamma(1.0 + V0D0) - torch.lgamma(torch.tensor(1.0))
-    lgM += torch.lgamma(1.0 + V0D1) - torch.lgamma(torch.tensor(1.0))
-
-    # when j=1 (V=1)
-    lgM += torch.lgamma(torch.tensor(2.0)) - torch.lgamma(2.0 + V1D1 + V1D0)
-    lgM += torch.lgamma(1.0 + V1D0) - torch.lgamma(torch.tensor(1.0))
-    lgM += torch.lgamma(1.0 + V1D1) - torch.lgamma(torch.tensor(1.0))
-
-    if variants_tensor.ndim == 1:
-        # lgM is #traits x 1;
-        lgM = lgM.reshape(1, lgM.shape[0])
-    # print("VODO:{},V1D0:{},V0D1:{},V1D1:{},lgM:{}".format(V0D0.sum(), V1D0.sum(), V0D1.sum(), V1D1.sum(),lgM))
-    return lgM
 
 
 def save_GDsearch_result(traitIDs, rr, glgm, varIDs, topGD, glgm_topGD):
@@ -306,7 +247,7 @@ def save_GDsearch_result(traitIDs, rr, glgm, varIDs, topGD, glgm_topGD):
     gstat_newhead.extend(['seq', 'varID'])
 
     # output the RR and glgm for all the variants
-    with open(os.path.join("", "results", "Ch12wgs_multiTraits_GDsearch_020922_pytorch.csv"),
+    with open(os.path.join("..", "results", "Ch12wgs_multiTraits_GDsearch_020922_pytorch_without_data_slicing.csv"),
               "w") as outfile:  # more efficient than using dataframe to_csv...
         outfile.write(','.join(gstat_newhead) + '\n')
         for i in range(0, rr.shape[0]):
@@ -316,7 +257,10 @@ def save_GDsearch_result(traitIDs, rr, glgm, varIDs, topGD, glgm_topGD):
             ls.extend([str(i), varIDs[i]])
             outfile.write(','.join(str(item) for item in ls) + '\n')
 
-    with open(os.path.join("", "results", "Ch12wgs_multiTraits_GDsearch-topGD_020922_pytorch.csv"), "w") as outfile:
+    with open(
+            os.path.join("..", "results", "Ch12wgs_multiTraits_GDsearch-topGD_020922_pytorch_without_data_slicing.csv"),
+            "w") as outfile:
+        glgm_topGD = glgm_topGD.cpu().tolist()
         for i in range(0, len(traitIDs)):
             line = [traitIDs[i], str(topGD[i]), str(glgm_topGD[i])]
             #         print(line)
@@ -342,7 +286,8 @@ def save_sGD_result(element_run):
     ## element_run is a list; element_run[0] is a tuple of 7 values for one variant from lgMcal function;
     ## element_run[0][0] is the first output of 'lgMv1_SD', a 1D array, array([-3127.91831177,...])
     ### output the big array of element_run (the outputs from lgMcalall_var) to .csv
-    with open(os.path.join("", "results", "Ch12wgs_multiTraits_sGD_020522_pytorch.csv"), "w") as outfile:
+    with open(os.path.join("..", "results", "Ch12wgs_multiTraits_sGD_020522_pytorch_without_data_slicing.csv"),
+              "w") as outfile:
         # return(lgMv1_SD, lgMv0_sGD, lgMv0_topGD, lgM_v1v0, sGD, i, varID)
         outfile.write(','.join(outAll) + '\n')
         for i in range(0, len(element_run)):  ## Not output 'A0' for easier future analysis?!!
@@ -356,38 +301,41 @@ def save_sGD_result(element_run):
 
 
 if __name__ == '__main__':
+    # Create a device with a GPU. If you don't have a GPU, the code will produce an error.
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    # device = "cpu"
+    # release GPU memory that is no longer in use, this function clears the GPU memory cache,
+    # making more memory available for other operations.
+    torch.cuda.empty_cache()
 
     # 1 read data
     start_time = datetime.now()
-    root_path = os.path.join("..","data","1M")
-    # root_path = os.path.join("..","data","90K")
+    root_path = os.path.join("..", "data", "1M")
+    # root_path = os.path.join("..", "data", "90K")
+    # root_path = os.path.join("..", "data","test_data")
     # root_path = os.path.join("")
     subIDs, varIDs, variants_tensor, df_variants = read_variantsF(
-        # os.path.join(root_path, 'chrm21__KidsFirst_snp01_dominant_withCorrect_Index_RR1.csv'), variants_size=1)
-        # os.path.join(root_path, 'exonic_variants_01.csv'), variants_size=None)
-        os.path.join(root_path, 'chrm__KidsFirst_snp01_dominant1.csv'), variants_size=None)
-        # root_path, variants_size=10)
-    # subIDs, varIDs, variants_tensor, df_variants = read_variantsF(
-    #     os.path.join(root_path, 'chrm21__KidsFirst_snp01_dominant_withCorrect_Index_RR1.pkl.gzip'), variants_size=100)
+        os.path.join(root_path, 'chrm__KidsFirst_snp01_dominant1.csv'))
+    # os.path.join(root_path, 'exonic_variants_01.csv'))
+    # os.path.join(root_path, 'variants_test.csv'))
+
     subIDs_BP, traitIDs, traits_tensor = read_traitsF(
-        # os.path.join(root_path, 'Phenotype__KidsFirst_withCorrect_Index.csv'))
-        os.path.join(root_path, 'Phenotype_exonic_01.csv'))
-        # os.path.join(root_path, 'Phenotype__KidsFirst_Index01.csv'))
+        os.path.join(root_path, 'Phenotype__KidsFirst_Index01.csv'))
+    # os.path.join(root_path, 'Phenotype_exonic_01.csv'))
+    # os.path.join(root_path, 'traits_test.csv'))
 
     end_time = datetime.now()
     elapsed_time = (end_time - start_time).seconds
     logging.info(str(end_time) + '; read data elapsed time: {}s'.format(elapsed_time))
-    logging.info("variants: {}".format(np.shape(variants_tensor)))
+    logging.info("variants:{}".format(np.shape(variants_tensor)))
     logging.info("traits: {}".format(np.shape(traits_tensor)))
 
-    # 2 With GDsearch_all, calculate and output the global stats related to all the traits for all the variants using
-    # the entire population cpu better than gpu
-    # gpu: cpu:
+    # 2 With GDsearch_all, calculate and output the global stats related to all the traits for all the variants
 
+    # move the tensors to GPU
     variants_tensor = variants_tensor.to(device=device)
     traits_tensor = traits_tensor.to(device=device)
+    torch.cuda.empty_cache()
+
     start_time = datetime.now()
     rr, glgm, glgm_topGD, topGD_index = GDsearch_all(traits_tensor, variants_tensor)
     logging.info("GDsearch all elapsed time: {}s ".format((datetime.now() - start_time).seconds))
@@ -400,17 +348,18 @@ if __name__ == '__main__':
     save_GDsearch_result(traitIDs, rr, glgm, varIDs, topGD, glgm_topGD)
 
     # 3 sGD search
-    #     An important flag to dictate whether using topGD or sGD as the driver for A0 group.
+    # An important flag to dictate whether using topGD or sGD as the driver for A0 group.
+    torch.cuda.empty_cache()
     use_oneTopGD = False
     element_run = []
     start_time = datetime.now()
     logging.info("device:{}".format(device))
     try:
         for var in tqdm(varIDs):
-            res = lgMcal(variants_tensor, traits_tensor, var, use_oneTopGD, topGD_index)
+            res = lgMcal(variants_tensor, traits_tensor, var, use_oneTopGD, topGD_index, device)
             element_run.append(res)
     except Exception as e:
         logging.error("Exception occurred", exc_info=True)
-    print("sGD elapsed time: {}s".format((datetime.now() - start_time).seconds))
+    logging.info("sGD elapsed time: {}s".format((datetime.now() - start_time).seconds))
 
     save_sGD_result(element_run)

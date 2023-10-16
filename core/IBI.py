@@ -26,7 +26,6 @@ import math
 import time
 from joblib import Parallel, delayed
 
-
 def read_traitsF(traitsF):  ### read the .csv file with traits (subjects_row x traits_column)
     traits = pd.read_csv(traitsF,
                          index_col=0)  # make sure the subIDs become the index column; as default, column names are inferred from the first line of the file
@@ -34,7 +33,7 @@ def read_traitsF(traitsF):  ### read the .csv file with traits (subjects_row x t
     traitIDs = traits.columns
     traits = np.array(traits,
                       dtype=np.int16)  # np.int8 has changed the type to int8; when using int8, the subIDs become negative.
-    #     print(np.sum(traits)) # sum gives odd result of -94.
+    #     print(np.sum(traits)) # sum gives odd results of -94.
     return (subIDs, traitIDs, traits)  # list, array
 
 
@@ -64,8 +63,6 @@ def read_variantsF(variantsF):  ## read the large genomic file (row_SNPs x colum
 def read_variantsF1(variantsF):  ## read the large genomic file (row_SNPs x column_subjects) using pandas
     df = pd.read_csv(variantsF,
                      index_col=0)  # this will turn the first column of varIDs into index thus df.columns will only include subIDs
-    # TODO select small dataset
-    df=df.iloc[:2,:]
     varIDs = list(df.index)
     subIDs = list(int(x) for x in df.columns)
     variants = np.array(df, dtype=np.int8)  # Somehow, np.int8 does not work here.
@@ -121,7 +118,7 @@ def DriverSearch(traits, variants):
 
     if variants.ndim == 1:
         lgM = lgM.reshape(1, lgM.shape[0])  # lgM is #traits x 1;
-
+    print("V1D1:{},V1D0:{},V0D1:{},V0D0:{},lgM:{}".format(V1D1, V1D0, V0D1, V0D0,lgM))
     return (lgM)  # lgM is a 2D array of #variants x #traits with print(np.shape(lgM))
 
 
@@ -183,7 +180,7 @@ def GDsearch_all(traits, variants):
 # function Ms1+Mr0
 def lgMcal(varID):  ## use DriverSearch for lgMv0 and for lgMv1 ## designed for using both one topGD and sGD
     i = varIDs.index(
-        varID)  # when varIDs is used in the final paralleing code; #print(i) # not sure why this would not print if using the above parallel code
+        varID)  # when varIDs is used in the final paralleing core; #print(i) # not sure why this would not print if using the above parallel core
     index1 = variants[i, :] == 1  # identify the index of patients that have this particular variant Vs=1
     index0 = variants[i, :] == 0
 
@@ -199,7 +196,7 @@ def lgMcal(varID):  ## use DriverSearch for lgMv0 and for lgMv1 ## designed for 
     BP_V1 = traits[
         index1]  # 2478 subjects' hypertension status who have v=1 for this SNP （2478,) and may have HTN=0 or HTN=1
     BP_V0 = traits[index0]  # (5290-2478) subjects' hypertension status(1 or 0) who have v=0 for this SNP
-
+    print("varID:{}".format(varID))
     lgMv1_SD = DriverSearch(BP_V1, variants[i, index1])[0]
     # this should be as efficient as SD_lgM_V1; only calculates one marginal assuming SD as the cause, P(D|SD->HT)
     # with [0], the original 2D array, array([[-3127.91831177,...]]),
@@ -240,12 +237,13 @@ def lgMcal(varID):  ## use DriverSearch for lgMv0 and for lgMv1 ## designed for 
         lgM_v1v0 = lgMv1_SD + lgMv0_topGD
     else:
         lgM_v1v0 = lgMv1_SD + lgMv0_sGD
+    # print(varID,lgMv1_SD,lgMv0_sGD)
 
     return (lgMv1_SD, lgMv0_sGD, lgMv0_topGD, lgM_v1v0, sGD, r, i, varID)
 
 
 ### Read the files to get matrix of variants and traits;
-root_path = os.path.join("..","data")
+root_path = os.path.join("..","data","test_data")
 clock_start = datetime.now()  # 46 seconds total to read the 38Kx5290 file and to run GDsearch
 start = time.perf_counter()  # 39s to read the above file using time.perf_counter()
 print(clock_start)
@@ -259,9 +257,11 @@ print(clock_start)
 
 ### chr12 WGS FHS; F1 took 20 minutes to read in these 438K SNPs x 4111 subs on my mac and 245s on Foundry terminal.
 subIDs, varIDs, variants, df_variants = read_variantsF1(
-    os.path.join(root_path , 'chrm21__KidsFirst_snp01_dominant_withCorrect_Index_RR1.csv'))
+    # os.path.join(root_path , 'chrm21__KidsFirst_snp01_dominant_withCorrect_Index_RR1.csv'))
+    os.path.join(root_path , 'variants_test.csv'))
 ### BP_HTN_WGS
-subIDs_BP, traitIDs, traits = read_traitsF(os.path.join(root_path , 'Phenotype__KidsFirst_withCorrect_Index.csv'))
+# subIDs_BP, traitIDs, traits = read_traitsF(os.path.join(root_path , 'Phenotype__KidsFirst_withCorrect_Index.csv'))
+subIDs_BP, traitIDs, traits = read_traitsF(os.path.join(root_path , 'traits_test.csv'))
 
 ### 10SNPs_mRNA
 # subIDs, varIDs, variants, df_variants = read_variantsF1 ('/Volumes/GoogleDrive/My Drive/jupyter_notebooks/NHLBI/pyICI_11242021v/inputs/10SNPs_mRNA_BP.csv')
@@ -306,7 +306,7 @@ else:
 gstat_newhead.extend(['seq', 'varID'])
 
 ## output the RR and glgm for all the variants
-with open("Ch12wgs_multiTraits_GDsearch_020922.csv",
+with open("../results/Ch12wgs_multiTraits_GDsearch_020922.csv",
           "w") as outfile:  # more efficient than using dataframe to_csv...
     outfile.write(','.join(gstat_newhead) + '\n')
     for i in range(0, rr.shape[0]):
@@ -329,7 +329,7 @@ for item in topGD_index:
 
 # uniGD_index = list(set(topGD_index))
 
-with open("Ch12wgs_multiTraits_GDsearch-topGD_020922.csv", "w") as outfile:
+with open("../results/Ch12wgs_multiTraits_GDsearch-topGD_020922.csv", "w") as outfile:
     for i in range(0, len(traitIDs)):
         line = [traitIDs[i], str(topGD[i]), str(glgm_topGD[i])]
         #         print(line)
@@ -343,10 +343,6 @@ use_oneTopGD = False  # An important flag to dictate whether using topGD or sGD 
 clock_start = datetime.now()  # 46 seconds total to read the 38Kx5290 file and to run GDsearch
 start = time.perf_counter()  # 39s to read the above file using time.perf_counter()
 print(clock_start)
-
-# TODO
-# for var in varIDs[0:100]:
-#     lgMcal(var)
 
 # For n_jobs below -1, (n_cpus + 1 + n_jobs) are used
 element_run = Parallel(n_jobs=-1)(delayed(lgMcal)(var) for var in varIDs)  # bigRR_varID[0:50]
@@ -374,7 +370,7 @@ outAll = outAll + ['seq', 'varID']
 ## element_run is a list; element_run[0] is a tuple of 7 values for one variant from lgMcal function;
 ## element_run[0][0] is the first output of 'lgMv1_SD', a 1D array, array([-3127.91831177,...])
 ### output the big array of element_run (the outputs from lgMcalall_var) to .csv
-with open("Ch12wgs_multiTraits_sGD_020522.csv", "w") as outfile:
+with open("../results/Ch12wgs_multiTraits_sGD_020522.csv", "w") as outfile:
     # return(lgMv1_SD, lgMv0_sGD, lgMv0_topGD, lgM_v1v0, sGD, i, varID)
     outfile.write(','.join(outAll) + '\n')
     for i in range(0, len(element_run)):  ## Not output 'A0' for easier future analysis?!!
