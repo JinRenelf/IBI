@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# @File    : IBI_pytorch.py
+# @File    : IBI_pytorch_without_data_slicing.py
 # @Date    : 2023-09-25
 # @Author  : ${ RenJin}
 
