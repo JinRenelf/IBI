@@ -19,7 +19,7 @@ import logging
 logging.getLogger().setLevel(logging.INFO)
 
 
-def read_variantsF_efficient(variants_path_file):
+def read_variantsF(variants_path_file):
     """
     read the large genomic file (row_SNPs x column_subjects) using pandas
     but need to convert file to npy
@@ -38,12 +38,14 @@ def read_variantsF_efficient(variants_path_file):
     variants = np.row_stack((A0, variants))
     varIDs.insert(0, 'A0')
     # df = pd.DataFrame(variants, index=varIDs, columns=subIDs, dtype=np.int8)
+    # when variants data is large, df will consume a large amount of memory,
+    # but df is no being used, set df=pd.Dataframe()
     df = pd.DataFrame()
     variants_tensor = torch.tensor(variants, dtype=torch.float16)
     return subIDs, varIDs, variants_tensor, df
 
 
-def read_variantsF(variants_path_file):
+def read_variantsF_efficient(variants_path_file):
     """
     read the large genomic file (row_SNPs x column_subjects) using pandas
     if the genomic file is too large,can cover the csv file to pickle file.
