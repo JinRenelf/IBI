@@ -41,7 +41,7 @@ def read_variantsF(variants_path_file):
     # when variants data is large, df will consume a large amount of memory,
     # but df is no being used, set df=pd.Dataframe()
     df = pd.DataFrame()
-    variants_tensor = torch.tensor(variants, dtype=torch.float16)
+    variants_tensor = torch.tensor(variants, dtype=torch.float32)
     return subIDs, varIDs, variants_tensor, df
 
 
@@ -67,7 +67,7 @@ def read_variantsF_efficient(variants_path_file):
     # but df is no being used, set df=pd.Dataframe()
     df = pd.DataFrame()
     # df = pd.DataFrame(variants, index=varIDs, columns=subIDs, dtype=np.int8)
-    variants_tensor = torch.as_tensor(variants, dtype=torch.float16)
+    variants_tensor = torch.as_tensor(variants, dtype=torch.float32)
 
     return subIDs, varIDs, variants_tensor, df
 
@@ -83,7 +83,7 @@ def read_traitsF(traits_path_file):
     traits = pd.read_csv(traits_path_file, index_col=0)
     subIDs = list(traits.index)
     traitIDs = traits.columns
-    traits_tensor = torch.as_tensor(traits.values, dtype=torch.float16)
+    traits_tensor = torch.as_tensor(traits.values, dtype=torch.float32)
     # np.int8 has changed the type to int8; when using int8, the subIDs become negative.
     #     print(np.sum(traits)) # sum gives odd results of -94.
     return subIDs, traitIDs, traits_tensor  # list, array
