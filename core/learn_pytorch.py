@@ -31,17 +31,16 @@ def load_test_demo(variants_num = None,isSparse=False,toTensor=False):
 
 if __name__ == '__main__':
 
-    # variants=torch.tensor([[0,1,1,0],[0,0,1,0],[0,0,0,1],[0,1,0,1],[0,0,1,0]],dtype=torch.float)
-    # traits=torch.tensor([[1], [0], [0], [1]],dtype=torch.float)
+    variants=torch.tensor([[0,1,1,0],[0,0,1,0],[0,0,0,1],[0,1,0,1],[0,0,1,0]],dtype=torch.float)
+    traits=torch.tensor([[1], [0], [0], [1]],dtype=torch.float)
 
-    variants, traits = load_test_demo(variants_num=100000)
+    # variants, traits = load_test_demo(variants_num=100000)
     devices = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    variants=torch.tensor(variants,dtype=torch.float16,device=devices)
-    traits=torch.tensor(traits,dtype=torch.float16,device=devices)
-
+    variants=torch.tensor(variants,dtype=torch.float32,device=devices)
+    traits=torch.tensor(traits,dtype=torch.float32,device=devices)
 
     start_time=time.time()
-    traits_xor=torch.ones(traits.shape,dtype=torch.float16,device=devices)-traits
+    traits_xor=torch.ones(traits.shape,dtype=torch.float32,device=devices)-traits
     # Repeat the tensor to get 40 elements
     nvariants=variants.shape[0]
     repeated_traits = traits.repeat(nvariants, 1).reshape(nvariants, traits.shape[0],traits.shape[1])
@@ -59,6 +58,15 @@ if __name__ == '__main__':
     V1D1=torch.bmm(expanded_variants_for_matmul, repeated_traits_with_weight)
     V1D0=torch.bmm(expanded_variants_for_matmul,repeated_traits_with_weight_xor)
     print("elapsed time:",time.time()-start_time)
+
+    # variants=0
+    repeated_traits_with_weight = expanded_a * repeated_traits_xor
+    variants_expanded = variants.unsqueeze(0)
+
+
+    # Perform matrix multiplication using broadcasting
+    results = torch.matmul(variants_expanded, repeated_traits_with_weight)
+
     # matmul_results = torch.bmm(expanded_a, repeated_traits_with_weight)
     #
     # a = torch.tensor([[0,1,1,0],[0,0,1,0],[0,0,0,1],[0,1,0,1],[0,0,1,0]])

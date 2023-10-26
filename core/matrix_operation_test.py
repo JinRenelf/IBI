@@ -119,7 +119,7 @@ if __name__ == '__main__':
     # # traits=np.array([[1],[0],[0],[1]])
     # traits=np.array([[1,1],[0,0],[0,0],[1,1]])
 
-    variants, traits =  load_test_demo(variants_num =10000)
+    variants, traits =  load_test_demo(variants_num =100000)
     # matrix pytorch
     # Test the function with sample data 1,000,000*5000: 650s
     devices = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -137,13 +137,11 @@ if __name__ == '__main__':
     # V0D0_all=torch.ones_like(V1D0_all)*variants_tensor.shape[1]-torch.ones_like(V1D0_all)*traits_sum-V1D0_all
     # print("method3:all elapsed time:",time.time()-start_time)
 
-
     start_time=time.time()
     print("variants: ", np.shape(variants_tensor))
     print("traits: ", np.shape(traits_tensor))
     print("device: ", variants_tensor.device)
-    # for i in tqdm(range(variants.shape[0])):
-    for i in tqdm(range(1)):
+    for i in tqdm(range(variants.shape[0])):
         variants_selected = variants_tensor[i, :].reshape(1, -1)
         """variants=1"""
         # 1 method1: pytorch+loop+data_slicing+mask 500k:8min
@@ -162,14 +160,8 @@ if __name__ == '__main__':
 
         V1D1 = V1 @ BP_V1
         V1D0 = V1 @ BP_V1_1
-        V0D1 = torch.ones_like(V1D1) * BP_V1_sum - V1D1
-        V0D0 = torch.ones_like(V1D0) * BP_V1_1_sum - V1D0
-        lgm_scipy=scipy_loggmma(V0D1,V0D0,V1D1,V1D0)
-        lgm_torch=torch_loggma(V0D1,V0D0,V1D1,V1D0)
-        print("scipy:{},torch:{}".format(lgm_scipy,lgm_torch))
-
-
-
+        # V0D1 = torch.ones_like(V1D1) * BP_V1_sum - V1D1
+        # V0D0 = torch.ones_like(V1D0) * BP_V1_1_sum - V1D0
 
         # print("method1:",i,V1D1_m1,V1D0_m1,V0D1_m1,V0D0_m1)
         # print("method2:",i,V1D1,V1D0,V0D1,V0D0)
@@ -194,20 +186,20 @@ if __name__ == '__main__':
         # print(i,V1D1_m1,V1D0_m1,V0D1_m1,V0D0_m1)
 
         # method 2 pytorch+loop_data_slicing 100k:16min 500K:9H 200K:1H17min 1M:58H
-        weights = torch.ones((1, variants_tensor.shape[1]), device=devices,dtype=torch.float16) - variants_selected
-        BP_V0 = weights.T * traits_tensor
-        BP_V0_sum = BP_V0.sum(axis=0).reshape(1, -1)
-        BP_V0_1 = (torch.ones(traits_tensor.shape,device=devices,dtype=torch.float16) - traits_tensor)* weights.T
-        BP_V0_1_sum = BP_V0_1.sum(axis=0).reshape(1, -1)
-
-        V1D1 = variants_tensor @ BP_V0
-        V1D0 = variants_tensor @ BP_V0_1
-        V0D1 = torch.ones_like(V1D1) * BP_V0_sum - V1D1
-        V0D0 = torch.ones_like(V1D0) * BP_V0_1_sum - V1D0
-
-        lgm_scipy=scipy_loggmma(V0D1,V0D0,V1D1,V1D0)
-        lgm_torch=torch_loggma(V0D1,V0D0,V1D1,V1D0)
-        print("scipy:{},torch:{}".format(lgm_scipy,lgm_torch))
+        # weights = torch.ones((1, variants_tensor.shape[1]), device=devices,dtype=torch.float16) - variants_selected
+        # BP_V0 = weights.T * traits_tensor
+        # BP_V0_sum = BP_V0.sum(axis=0).reshape(1, -1)
+        # BP_V0_1 = (torch.ones(traits_tensor.shape,device=devices,dtype=torch.float16) - traits_tensor)* weights.T
+        # BP_V0_1_sum = BP_V0_1.sum(axis=0).reshape(1, -1)
+        #
+        # V1D1 = variants_tensor @ BP_V0
+        # V1D0 = variants_tensor @ BP_V0_1
+        # V0D1 = torch.ones_like(V1D1) * BP_V0_sum - V1D1
+        # V0D0 = torch.ones_like(V1D0) * BP_V0_1_sum - V1D0
+        #
+        # lgm_scipy=scipy_loggmma(V0D1,V0D0,V1D1,V1D0)
+        # lgm_torch=torch_loggma(V0D1,V0D0,V1D1,V1D0)
+        # print("scipy:{},torch:{}".format(lgm_scipy,lgm_torch))
 
         # method 4 Test
         # weights = torch.ones_like(variants_selected, device=devices,dtype=torch.float16) - variants_selected

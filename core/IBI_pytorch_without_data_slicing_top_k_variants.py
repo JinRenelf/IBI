@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
 
+# @File    : IBI_pytorch_without_data_slicing_top_k_variants.py
+# @Date    : 2023-10-22
+# @Author  : ${RenJin}
+# -*- coding: utf-8 -*-
+
 # @File    : IBI_pytorch_without_data_slicing.py
 # @Date    : 2023-09-25
 # @Author  : ${ RenJin}
@@ -140,7 +145,7 @@ def GDsearch_all(traits_tensor, variants_tensor):
 def cal_lgM(variants_use, weights, traits_tensor, device):
     BP_V = weights.T * traits_tensor
     BP_V_sum = BP_V.sum(axis=0).reshape(1, -1)
-    BP_V_xor = (torch.ones(traits_tensor.shape, device=device, dtype=torch.float16) - traits_tensor) * weights.T
+    BP_V_xor = (torch.ones(traits_tensor.shape, device=device, dtype=torch.float32) - traits_tensor) * weights.T
     BP_V_xor_sum = BP_V_xor.sum(axis=0).reshape(1, -1)
 
     V1D1 = variants_use @ BP_V
@@ -165,7 +170,8 @@ def cal_lgM(variants_use, weights, traits_tensor, device):
     return lgM
 
 
-def lgMcal(variants_tensor, traits_tensor, varID, use_oneTopGD, topGD_index, device):
+def lgMcal(top_variantsID, top_variants_tensor, variants_tensor, traits_tensor, varID, use_oneTopGD, topGD_index,
+           device):
     """
 
     :param varID:
@@ -181,8 +187,9 @@ def lgMcal(variants_tensor, traits_tensor, varID, use_oneTopGD, topGD_index, dev
     lgMv1_SD = cal_lgM(variants_use_1, weights_1, traits_tensor, device)
 
     # when variants=0
-    variants_use_0 = variants_tensor
-    weights_0 = torch.ones(variants_selected.shape, dtype=torch.float32, device=device) - variants_selected
+    # variants_use_0 = variants_tensor
+    variants_use_0 = top_variants_tensor
+    weights_0 = torch.ones(variants_selected.shape, dtype=torch.float16, device=device) - variants_selected
     lgMv0 = cal_lgM(variants_use_0, weights_0, traits_tensor, device)
 
     # collect the lgMv0_topGD for each trait in a 1D array; the lgM value for V0 group when using topGD as the driver
@@ -201,14 +208,14 @@ def lgMcal(variants_tensor, traits_tensor, varID, use_oneTopGD, topGD_index, dev
         lgMv0_sGD = torch.zeros(len(traitIDs), device=device)
         sGD = torch.zeros(len(traitIDs), device=device)
     else:
-        # with sGD, lgMv0 is m_variants x k_traits
+        # with sGD, lgMv0 is top_k_variants x k_traits
         lgMv0_sGD = torch.max(lgMv0, dim=0).values
         sGD_index = torch.max(lgMv0, dim=0).indices
 
         sGD = []
         # collect the variant ID of sGD for each trait in a 1D array
         for item in sGD_index:
-            sGD.append(varIDs[item])
+            sGD.append(top_variantsID[item])
         sGD = np.array(sGD)
 
         k = 0
@@ -218,7 +225,8 @@ def lgMcal(variants_tensor, traits_tensor, varID, use_oneTopGD, topGD_index, dev
             # a vector of K
             lgMv0_topGD.append(lgMv0[j, k])
             # [0] to get only the coefficient and ignore the p-values
-            r1 = stats.spearmanr(variants_tensor[i, :].to("cpu").numpy(), variants_tensor[j, :].to("cpu").numpy())[0]
+            r1 = stats.spearmanr(variants_tensor[i, :].to("cpu").numpy(), top_variants_tensor[j, :].to("cpu").numpy())[
+                0]
             r.append(r1)  # a vector of K
             k = k + 1
     lgMv0_topGD = torch.tensor(lgMv0_topGD)
@@ -269,7 +277,7 @@ def save_GDsearch_result(traitIDs, rr, glgm, varIDs, topGD, glgm_topGD):
             outfile.write(','.join(str(item) for item in line) + '\n')
 
 
-def save_sGD_result(element_run):
+def save_sGD_result(element_run, traitIDs, file_name):
     """
     collect the headers for this file
     :return:
@@ -288,7 +296,7 @@ def save_sGD_result(element_run):
     ## element_run is a list; element_run[0] is a tuple of 7 values for one variant from lgMcal function;
     ## element_run[0][0] is the first output of 'lgMv1_SD', a 1D array, array([-3127.91831177,...])
     ### output the big array of element_run (the outputs from lgMcalall_var) to .csv
-    with open(os.path.join("..", "results", "Ch12wgs_multiTraits_sGD_020522_pytorch_without_data_slicing.csv"),
+    with open(os.path.join("..", "results", "{}_sGD_results.csv".format(file_name.split(".")[0])),
               "w") as outfile:
         # return(lgMv1_SD, lgMv0_sGD, lgMv0_topGD, lgM_v1v0, sGD, i, varID)
         outfile.write(','.join(outAll) + '\n')
@@ -301,68 +309,123 @@ def save_sGD_result(element_run):
             # print(ls)
             outfile.write(','.join(str(item) for item in ls) + '\n')
 
+# TODO optimize
+def GD_search_all_chromosome(chromosome_file_folder_path, phenotype_file_path, device="cpu"):
+    subIDs_BP, traitIDs, traits_tensor = read_traitsF(phenotype_file_path)
+    traits_tensor = traits_tensor.to(device=device)
+    torch.cuda.empty_cache()
+    glgm_all = torch.tensor([], device=device)
+    varIDs_all = []
+    file_list=os.listdir(chromosome_file_folder_path)
+    for file_name in file_list:
+        subIDs, varIDs, variants_tensor, df_variants = read_variantsF(
+            os.path.join(chromosome_file_folder_path, file_name))
+
+        logging.info("variants:{}".format(np.shape(variants_tensor)))
+        logging.info("traits: {}".format(np.shape(traits_tensor)))
+
+        # 2 With GDsearch_all, calculate and output the global stats related to all the traits for all the variants
+        # move the tensors to GPU
+        variants_tensor = variants_tensor.to(device=device)
+        torch.cuda.empty_cache()
+        start_time = datetime.now()
+        rr, glgm, glgm_topGD, topGD_index = GDsearch_all(traits_tensor, variants_tensor)
+        logging.info("GDsearch all elapsed time: {}s ".format((datetime.now() - start_time).seconds))
+        glgm_all = torch.concat([glgm_all, glgm])
+        varIDs_all.extend(varIDs)
+
+    return glgm_all, varIDs_all
+
+
+def get_top_variants_info(device, k=1000):
+    top_vr = pd.read_csv(os.path.join("..", "results", "Top_1000_Vr.csv"), index_col=0)
+    top_variantsID = top_vr.index.tolist()
+    top_variants = top_vr.values
+    A0 = np.ones(top_variants.shape[1], dtype=np.int8)
+    top_variants = np.row_stack((A0, top_variants))
+    top_variantsID.insert(0, 'A0')
+    top_variants_tensor = torch.tensor(top_variants, dtype=torch.float32, device=device)
+    return top_variantsID, top_variants_tensor
+
+# only for one trait
+def get_top_variants_info_jin(chromosome_file_folder_path, glgm_all, varIDs_all, device, k=1000,union_flag=True):
+    """
+    select top k variants from all chromosomes, if have multi traits, use union top k variants from all traits
+    :param chromosome_file_folder_path:
+    :param glgm_all:
+    :param varIDs_all:
+    :param device:
+    :param k:
+    :return:
+    """
+    # Loop through each trait and take the top k variants
+    top_k_varIDs_all=[]
+    for traits_num in range(glgm_all.shape[1]):
+        glgm_all_single=glgm_all[:,traits_num]
+        _, sorted_indices = torch.sort(glgm_all_single, descending=True)
+        sorted_varIDs_all = [varIDs_all[i] for i in sorted_indices]
+        top_k_varIDs = sorted_varIDs_all[:k]
+        top_k_varIDs_all.append(top_k_varIDs)
+        topGD_varID=sorted_varIDs_all[0]
+
+    if union_flag:
+        # take union top k variants from all traits
+        top_k_varIDs_union = list(set(x for sublist in top_k_varIDs_all for x in sublist))
+
+    top_k_varID_final = []
+    top_k_variants = []
+    file_list = os.listdir(chromosome_file_folder_path)
+
+    # extract top k variants from all files
+    for file_name in file_list:
+        subIDs, varIDs, variants_tensor, df_variants = read_variantsF(
+            os.path.join(chromosome_file_folder_path, file_name))
+        indexs = [i for i, value in enumerate(varIDs) if value in top_k_varIDs_union]
+        selected_varIDs = [value for i, value in enumerate(varIDs) if value in top_k_varIDs_union]
+        top_k_varID_final.extend(selected_varIDs)
+        top_k_variants.extend(variants_tensor[indexs, :].tolist())
+
+    top_variants=np.array(top_k_variants)
+    if "AO" not in top_k_varID_final:
+        A0 = np.ones(top_variants.shape[1], dtype=np.int8)
+        top_variants = np.row_stack((A0, top_variants))
+        top_k_varID_final.insert(0, 'A0')
+    top_variants_tensor = torch.tensor(top_variants, dtype=torch.float32, device=device)
+
+    # get topGD_index
+    topGD_index=[top_k_varID_final.index(topGD_varID)]
+    return top_k_varID_final, top_variants_tensor,topGD_index
+
 
 if __name__ == '__main__':
     # Create a device with a GPU. If you don't have a GPU, the code will produce an error.
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    # device = torch.device('cpu')
-    # release GPU memory that is no longer in use, this function clears the GPU memory cache,
-    # making more memory available for other operations.
-    torch.cuda.empty_cache()
-
-    # 1 read data
-    start_time = datetime.now()
-    # root_path = os.path.join("..", "data", "1M")
-    root_path = os.path.join("..", "data", "90K")
-    # root_path = os.path.join("..", "data","test_data")
-    # root_path = os.path.join("")
-    subIDs, varIDs, variants_tensor, df_variants = read_variantsF(
-        # os.path.join(root_path, 'chrm__KidsFirst_snp01_dominant1.csv'))
-    os.path.join(root_path, 'exonic_variants_01.csv'))
-    # os.path.join(root_path, 'variants_test.csv'))
-
-    subIDs_BP, traitIDs, traits_tensor = read_traitsF(
-        # os.path.join(root_path, 'Phenotype__KidsFirst_Index01.csv'))
-    os.path.join(root_path, 'Phenotype_exonic_01.csv'))
-    # os.path.join(root_path, 'traits_test.csv'))
-
-    end_time = datetime.now()
-    elapsed_time = (end_time - start_time).seconds
-    logging.info(str(end_time) + '; read data elapsed time: {}s'.format(elapsed_time))
-    logging.info("variants:{}".format(np.shape(variants_tensor)))
-    logging.info("traits: {}".format(np.shape(traits_tensor)))
-
-    # 2 With GDsearch_all, calculate and output the global stats related to all the traits for all the variants
-
-    # move the tensors to GPU
-    variants_tensor = variants_tensor.to(device=device)
-    traits_tensor = traits_tensor.to(device=device)
-    torch.cuda.empty_cache()
-
-    start_time = datetime.now()
-    rr, glgm, glgm_topGD, topGD_index = GDsearch_all(traits_tensor, variants_tensor)
-    logging.info("GDsearch all elapsed time: {}s ".format((datetime.now() - start_time).seconds))
-
-    topGD = []
-    for item in topGD_index:
-        # currently the wgs SNPs are labeled with numbers, thus varIDs and topGD both are int lists.
-        topGD.append(varIDs[item])
-    # save results
-    save_GDsearch_result(traitIDs, rr, glgm, varIDs, topGD, glgm_topGD)
+    chromosome_file_folder_path = os.path.join("..", "data", "all_chromsomes", "CHD All Chrm variant Files")
+    phenotype_file_path = os.path.join("..", "data", "all_chromsomes", "CHD Phenotype",
+                                       # "Phenotype__KidsFirst_Index01_v4.csv")
+                                       "Phenotype_exonic_01.csv")
+    k=1000
+    glgm_all, varIDs_all= GD_search_all_chromosome(chromosome_file_folder_path, phenotype_file_path, device=device)
+    top_variantsID, top_variants_tensor,topGD_index=get_top_variants_info_jin(chromosome_file_folder_path, glgm_all, varIDs_all, device, k=k)
 
     # 3 sGD search
     # An important flag to dictate whether using topGD or sGD as the driver for A0 group.
-    # torch.cuda.empty_cache()
-    # use_oneTopGD = False
-    # element_run = []
-    # start_time = datetime.now()
-    # logging.info("device:{}".format(device))
-    # try:
-    #     for var in tqdm(varIDs):
-    #         res = lgMcal(variants_tensor, traits_tensor, var, use_oneTopGD, topGD_index, device)
-    #         element_run.append(res)
-    # except Exception as e:
-    #     logging.error("Exception occurred", exc_info=True)
-    # logging.info("sGD elapsed time: {}s".format((datetime.now() - start_time).seconds))
-    #
-    # save_sGD_result(element_run)
+    subIDs_BP, traitIDs, traits_tensor = read_traitsF(phenotype_file_path)
+    traits_tensor = traits_tensor.to(device=device)
+    file_list=os.listdir(chromosome_file_folder_path)
+
+    for file_name in tqdm(file_list):
+        subIDs, varIDs, variants_tensor, df_variants = read_variantsF(
+            os.path.join(chromosome_file_folder_path, file_name))
+        variants_tensor = variants_tensor.to(device=device)
+
+        use_oneTopGD = False
+        element_run = []
+        start_time = datetime.now()
+        logging.info("device:{}".format(device))
+
+        for var in tqdm(varIDs):
+            res = lgMcal(top_variantsID, top_variants_tensor, variants_tensor, traits_tensor, var, use_oneTopGD,
+                         topGD_index, device=device)
+            element_run.append(res)
+        save_sGD_result(element_run,traitIDs,file_name)

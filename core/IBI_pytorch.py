@@ -306,7 +306,7 @@ def save_GDsearch_result(traitIDs, rr, glgm, varIDs, topGD, glgm_topGD):
     gstat_newhead.extend(['seq', 'varID'])
 
     # output the RR and glgm for all the variants
-    with open(os.path.join("", "results", "Ch12wgs_multiTraits_GDsearch_020922_pytorch.csv"),
+    with open(os.path.join("..", "results", "Ch12wgs_multiTraits_GDsearch_020922_pytorch.csv"),
               "w") as outfile:  # more efficient than using dataframe to_csv...
         outfile.write(','.join(gstat_newhead) + '\n')
         for i in range(0, rr.shape[0]):
@@ -316,7 +316,7 @@ def save_GDsearch_result(traitIDs, rr, glgm, varIDs, topGD, glgm_topGD):
             ls.extend([str(i), varIDs[i]])
             outfile.write(','.join(str(item) for item in ls) + '\n')
 
-    with open(os.path.join("", "results", "Ch12wgs_multiTraits_GDsearch-topGD_020922_pytorch.csv"), "w") as outfile:
+    with open(os.path.join("..", "results", "Ch12wgs_multiTraits_GDsearch-topGD_020922_pytorch.csv"), "w") as outfile:
         for i in range(0, len(traitIDs)):
             line = [traitIDs[i], str(topGD[i]), str(glgm_topGD[i])]
             #         print(line)
@@ -361,13 +361,13 @@ if __name__ == '__main__':
 
     # 1 read data
     start_time = datetime.now()
-    root_path = os.path.join("..","data","1M")
-    # root_path = os.path.join("..","data","90K")
+    # root_path = os.path.join("..","data","1M")
+    root_path = os.path.join("..","data","90K")
     # root_path = os.path.join("")
     subIDs, varIDs, variants_tensor, df_variants = read_variantsF(
         # os.path.join(root_path, 'chrm21__KidsFirst_snp01_dominant_withCorrect_Index_RR1.csv'), variants_size=1)
-        # os.path.join(root_path, 'exonic_variants_01.csv'), variants_size=None)
-        os.path.join(root_path, 'chrm__KidsFirst_snp01_dominant1.csv'), variants_size=None)
+        os.path.join(root_path, 'exonic_variants_01.csv'), variants_size=None)
+        # os.path.join(root_path, 'chrm__KidsFirst_snp01_dominant1.csv'), variants_size=None)
         # root_path, variants_size=10)
     # subIDs, varIDs, variants_tensor, df_variants = read_variantsF(
     #     os.path.join(root_path, 'chrm21__KidsFirst_snp01_dominant_withCorrect_Index_RR1.pkl.gzip'), variants_size=100)
@@ -401,16 +401,16 @@ if __name__ == '__main__':
 
     # 3 sGD search
     #     An important flag to dictate whether using topGD or sGD as the driver for A0 group.
-    use_oneTopGD = False
-    element_run = []
-    start_time = datetime.now()
-    logging.info("device:{}".format(device))
-    try:
-        for var in tqdm(varIDs):
-            res = lgMcal(variants_tensor, traits_tensor, var, use_oneTopGD, topGD_index)
-            element_run.append(res)
-    except Exception as e:
-        logging.error("Exception occurred", exc_info=True)
-    print("sGD elapsed time: {}s".format((datetime.now() - start_time).seconds))
-
-    save_sGD_result(element_run)
+    # use_oneTopGD = False
+    # element_run = []
+    # start_time = datetime.now()
+    # logging.info("device:{}".format(device))
+    # try:
+    #     for var in tqdm(varIDs):
+    #         res = lgMcal(variants_tensor, traits_tensor, var, use_oneTopGD, topGD_index)
+    #         element_run.append(res)
+    # except Exception as e:
+    #     logging.error("Exception occurred", exc_info=True)
+    # print("sGD elapsed time: {}s".format((datetime.now() - start_time).seconds))
+    #
+    # save_sGD_result(element_run)
