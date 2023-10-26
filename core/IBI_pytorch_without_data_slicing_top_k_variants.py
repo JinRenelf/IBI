@@ -3,12 +3,6 @@
 # @File    : IBI_pytorch_without_data_slicing_top_k_variants.py
 # @Date    : 2023-10-22
 # @Author  : ${RenJin}
-# -*- coding: utf-8 -*-
-
-# @File    : IBI_pytorch_without_data_slicing.py
-# @Date    : 2023-09-25
-# @Author  : ${ RenJin}
-
 
 import os
 import time
