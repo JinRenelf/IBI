@@ -9,7 +9,7 @@ import torch
 import torch
 
 # Assuming you have 2 GPUs
-n_gpus = 2
+n_gpus = 1
 
 # Create two random large matrices
 A = torch.randn(10000, 5000).cuda('cuda:0')
@@ -35,4 +35,26 @@ for i in range(n_gpus):
     results.append(result)
 
 # Concatenate results from all GPUs
-final_result = torch.cat(results, dim=0)
+# final_result = torch.cat(results, dim=0)
+
+
+import torch
+z = torch.Tensor(([[2,3], [1,1], [4,5]],
+                  [[2,2], [1,2], [7,7]],
+                  [[2,3], [1,1], [4,5]],
+                  [[2,3], [1,1], [4,5]]))
+
+b = torch.Tensor(([1, 0],
+                  [0, 1],
+                  [0.2, 0.8],
+                  [0.5, 0.5]))
+print(z.shape, b.shape)
+
+# original implementation
+b1 = b.unsqueeze(1)
+r1 = z * b1
+r1 = torch.sum(r1, dim=-1)
+print(r1.shape)
+
+r3 = torch.einsum('ijk,ik->ij', z, b)
+print((r1-r3).abs().sum())  # should be zero if we do the same operation

@@ -18,7 +18,7 @@ import logging
 logging.getLogger().setLevel(logging.INFO)
 
 
-def read_variantsF(variants_path_file):
+def read_variantsF(variants_path_file,file_name):
     """
     read the large genomic file (row_SNPs x column_subjects) using pandas
     but need to convert file to npy
@@ -28,7 +28,7 @@ def read_variantsF(variants_path_file):
     """
 
     # this will turn the first column of varIDs into index thus df.columns will only include subIDs
-    df = pd.read_csv(variants_path_file, index_col=0)
+    df = pd.read_csv(os.path.join(variants_path_file, "{}.csv".format(file_name)), index_col=0)
 
     varIDs = list(df.index)
     subIDs = list(int(x) for x in df.columns)
@@ -44,20 +44,19 @@ def read_variantsF(variants_path_file):
     return subIDs, varIDs, variants_tensor, df
 
 
-def read_variantsF_efficient(variants_path_file):
+def read_variantsF_efficient(variants_path_file, file_name):
     """
-    read the large genomic file (row_SNPs x column_subjects) using pandas
-    if the genomic file is too large,can cover the csv file to pickle file.
+    read the compressed variants data
     :param variants_path_file:
     :param variants_size: if variants_size=None,select all the variants
     :return: subIDs, varIDs, variants_tensor, df  # list, list, array and dataframe
     """
-    varIDs_file = open(os.path.join(variants_path_file, "varIDs.txt"), "r")
+    varIDs_file = open(os.path.join(variants_path_file, "{}_varIDs.txt".format(file_name)), "r")
     varIDs = varIDs_file.read().split("\n")
-    subIDs_file = open(os.path.join(variants_path_file, "subIDs.txt"), "r")
+    subIDs_file = open(os.path.join(variants_path_file, "{}_subIDs.txt".format(file_name)), "r")
     subIDs = subIDs_file.read().split("\n")
     subIDs = list(int(x) for x in subIDs)
-    variants = np.load(os.path.join(variants_path_file, "data.npy"))
+    variants = np.load(os.path.join(variants_path_file, "{}_variants_value.npy".format(file_name)))
 
     A0 = np.ones(len(subIDs), dtype=np.int8)
     variants = np.row_stack((A0, variants))
@@ -233,12 +232,16 @@ def lgMcal(top_variantsID, top_variants_tensor, variants_tensor, traits_tensor, 
     return lgMv1_SD, lgMv0_sGD, lgMv0_topGD, lgM_v1v0, sGD, r, i, varID
 
 
-def save_GDsearch_result(traitIDs, rr, glgm, varIDs, topGD, glgm_topGD):
+def save_GDsearch_result(output_root_path,traitIDs, rr, glgm, varIDs, topGD_index, glgm_topGD,file_name):
     """
     collect the headers for the output file
     :param traitIDs:
     :return:
     """
+    topGD = []
+    for item in topGD_index:
+        # currently the wgs SNPs are labeled with numbers, thus varIDs and topGD both are int lists.
+        topGD.append(varIDs[item])
     gstat_head = ['RR', 'M']
     if len(traitIDs) == 1:
         gstat_newhead = gstat_head
@@ -251,7 +254,7 @@ def save_GDsearch_result(traitIDs, rr, glgm, varIDs, topGD, glgm_topGD):
     gstat_newhead.extend(['seq', 'varID'])
 
     # output the RR and glgm for all the variants
-    with open(os.path.join("..", "results", "Ch12wgs_multiTraits_GDsearch_020922_pytorch_without_data_slicing.csv"),
+    with open(os.path.join(output_root_path,"{}_GDsearch_pyotrch.csv".format(file_name)),
               "w") as outfile:  # more efficient than using dataframe to_csv...
         outfile.write(','.join(gstat_newhead) + '\n')
         for i in range(0, rr.shape[0]):
@@ -262,7 +265,7 @@ def save_GDsearch_result(traitIDs, rr, glgm, varIDs, topGD, glgm_topGD):
             outfile.write(','.join(str(item) for item in ls) + '\n')
 
     with open(
-            os.path.join("..", "results", "Ch12wgs_multiTraits_GDsearch-topGD_020922_pytorch_without_data_slicing.csv"),
+            os.path.join(output_root_path,"{}_GDsearch-topGD_pytorch.csv".format(file_name)),
             "w") as outfile:
         glgm_topGD = glgm_topGD.cpu().tolist()
         for i in range(0, len(traitIDs)):
@@ -271,7 +274,7 @@ def save_GDsearch_result(traitIDs, rr, glgm, varIDs, topGD, glgm_topGD):
             outfile.write(','.join(str(item) for item in line) + '\n')
 
 
-def save_sGD_result(element_run, traitIDs, file_name):
+def save_sGD_result(element_run, traitIDs, file_name,output_sGD_root_path):
     """
     collect the headers for this file
     :return:
@@ -290,7 +293,7 @@ def save_sGD_result(element_run, traitIDs, file_name):
     ## element_run is a list; element_run[0] is a tuple of 7 values for one variant from lgMcal function;
     ## element_run[0][0] is the first output of 'lgMv1_SD', a 1D array, array([-3127.91831177,...])
     ### output the big array of element_run (the outputs from lgMcalall_var) to .csv
-    with open(os.path.join("..", "results", "{}_sGD_results.csv".format(file_name.split(".")[0])),
+    with open(os.path.join(output_sGD_root_path, "{}_sGD_results.csv".format(file_name.split(".")[0])),
               "w") as outfile:
         # return(lgMv1_SD, lgMv0_sGD, lgMv0_topGD, lgM_v1v0, sGD, i, varID)
         outfile.write(','.join(outAll) + '\n')
@@ -303,21 +306,23 @@ def save_sGD_result(element_run, traitIDs, file_name):
             # print(ls)
             outfile.write(','.join(str(item) for item in ls) + '\n')
 
+
 # TODO optimize
-def GD_search_all_chromosome(chromosome_file_folder_path, phenotype_file_path, device="cpu"):
+def GD_search_all_chromosome(file_list, chrm_file_compressed_folder_path, phenotype_file_path,output_root_path,device="cpu"):
     subIDs_BP, traitIDs, traits_tensor = read_traitsF(phenotype_file_path)
     traits_tensor = traits_tensor.to(device=device)
     torch.cuda.empty_cache()
     glgm_all = torch.tensor([], device=device)
     varIDs_all = []
-    file_list=os.listdir(chromosome_file_folder_path)
-    for file_name in file_list:
-        subIDs, varIDs, variants_tensor, df_variants = read_variantsF(
-            os.path.join(chromosome_file_folder_path, file_name))
+    for file_name in tqdm(file_list):
+        start_time = time.time()
+        subIDs, varIDs, variants_tensor, df_variants = read_variantsF_efficient(
+            chrm_file_compressed_folder_path, file_name)
 
+        logging.info("file_name:{}".format(file_name))
         logging.info("variants:{}".format(np.shape(variants_tensor)))
         logging.info("traits: {}".format(np.shape(traits_tensor)))
-
+        logging.info("read variants data elapsed time:{}".format(time.time() - start_time))
         # 2 With GDsearch_all, calculate and output the global stats related to all the traits for all the variants
         # move the tensors to GPU
         variants_tensor = variants_tensor.to(device=device)
@@ -325,6 +330,9 @@ def GD_search_all_chromosome(chromosome_file_folder_path, phenotype_file_path, d
         start_time = datetime.now()
         rr, glgm, glgm_topGD, topGD_index = GDsearch_all(traits_tensor, variants_tensor)
         logging.info("GDsearch all elapsed time: {}s ".format((datetime.now() - start_time).seconds))
+
+        # save GDsearch_results for each chrom
+        save_GDsearch_result(output_root_path,traitIDs, rr, glgm, varIDs, topGD_index, glgm_topGD,file_name)
         glgm_all = torch.concat([glgm_all, glgm])
         varIDs_all.extend(varIDs)
 
@@ -341,8 +349,10 @@ def get_top_variants_info(device, k=1000):
     top_variants_tensor = torch.tensor(top_variants, dtype=torch.float32, device=device)
     return top_variantsID, top_variants_tensor
 
+
 # only for one trait
-def get_top_variants_info_jin(chromosome_file_folder_path, glgm_all, varIDs_all, device, k=1000,union_flag=True):
+def get_top_variants_info_jin(file_list, chrm_file_compressed_folder_path, glgm_all, varIDs_all, device, k=1000,
+                              union_flag=True):
     """
     select top k variants from all chromosomes, if have multi traits, use union top k variants from all traits
     :param chromosome_file_folder_path:
@@ -353,14 +363,14 @@ def get_top_variants_info_jin(chromosome_file_folder_path, glgm_all, varIDs_all,
     :return:
     """
     # Loop through each trait and take the top k variants
-    top_k_varIDs_all=[]
+    top_k_varIDs_all = []
     for traits_num in range(glgm_all.shape[1]):
-        glgm_all_single=glgm_all[:,traits_num]
+        glgm_all_single = glgm_all[:, traits_num]
         _, sorted_indices = torch.sort(glgm_all_single, descending=True)
         sorted_varIDs_all = [varIDs_all[i] for i in sorted_indices]
         top_k_varIDs = sorted_varIDs_all[:k]
         top_k_varIDs_all.append(top_k_varIDs)
-        topGD_varID=sorted_varIDs_all[0]
+        topGD_varID = sorted_varIDs_all[0]
 
     if union_flag:
         # take union top k variants from all traits
@@ -368,18 +378,17 @@ def get_top_variants_info_jin(chromosome_file_folder_path, glgm_all, varIDs_all,
 
     top_k_varID_final = []
     top_k_variants = []
-    file_list = os.listdir(chromosome_file_folder_path)
 
     # extract top k variants from all files
-    for file_name in file_list:
-        subIDs, varIDs, variants_tensor, df_variants = read_variantsF(
-            os.path.join(chromosome_file_folder_path, file_name))
+    for file_name in tqdm(file_list):
+        subIDs, varIDs, variants_tensor, df_variants = read_variantsF_efficient(chrm_file_compressed_folder_path,
+                                                                                file_name)
         indexs = [i for i, value in enumerate(varIDs) if value in top_k_varIDs_union]
         selected_varIDs = [value for i, value in enumerate(varIDs) if value in top_k_varIDs_union]
         top_k_varID_final.extend(selected_varIDs)
         top_k_variants.extend(variants_tensor[indexs, :].tolist())
 
-    top_variants=np.array(top_k_variants)
+    top_variants = np.array(top_k_variants)
     if "AO" not in top_k_varID_final:
         A0 = np.ones(top_variants.shape[1], dtype=np.int8)
         top_variants = np.row_stack((A0, top_variants))
@@ -387,39 +396,115 @@ def get_top_variants_info_jin(chromosome_file_folder_path, glgm_all, varIDs_all,
     top_variants_tensor = torch.tensor(top_variants, dtype=torch.float32, device=device)
 
     # get topGD_index
-    topGD_index=[top_k_varID_final.index(topGD_varID)]
-    return top_k_varID_final, top_variants_tensor,topGD_index
+    topGD_index = [top_k_varID_final.index(topGD_varID)]
+    return top_k_varID_final, top_variants_tensor, topGD_index
+
+
+def make_dirs(folder_path):
+    """
+    make directory
+    :param folder_path:
+    :return:
+    """
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+        print(f"The folder was created successfully at {folder_path}")
+    else:
+        print("The folder already exists.")
+
+
+def compress_file(file_path, output_file_folder, file_name):
+    st = time.time()
+    df = pd.read_csv(file_path, index_col=0)
+    print("read orig data elpased time:{}".format(time.time() - st))
+    subIDs = list(df.columns)
+    data = np.array(df, dtype=np.int8)
+    varIDs = df.index
+    with open(os.path.join(output_file_folder, '{}_subIDs.txt'.format(file_name)), 'w') as file:
+        file.write('\n'.join(subIDs))
+
+    with open(os.path.join(output_file_folder, '{}_varIDs.txt'.format(file_name)), 'w') as file:
+        file.write('\n'.join(varIDs))
+
+    np.save(os.path.join(output_file_folder, "{}_variants_value.npy".format(file_name)), data)
 
 
 if __name__ == '__main__':
+
+    # 0 file preparation
     # Create a device with a GPU. If you don't have a GPU, the code will produce an error.
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    chromosome_file_folder_path = os.path.join("..", "data", "all_chromsomes", "CHD All Chrm variant Files")
-    phenotype_file_path = os.path.join("..", "data", "all_chromsomes", "CHD Phenotype",
-                                       # "Phenotype__KidsFirst_Index01_v4.csv")
-                                       "Phenotype_exonic_01.csv")
-    k=1000
-    glgm_all, varIDs_all= GD_search_all_chromosome(chromosome_file_folder_path, phenotype_file_path, device=device)
-    top_variantsID, top_variants_tensor,topGD_index=get_top_variants_info_jin(chromosome_file_folder_path, glgm_all, varIDs_all, device, k=k)
+
+    # create output results folder
+    output_root_path=os.path.join("..", "results", "all_chrm_results")
+    output_sGD_root_path=os.path.join("..", "results", "all_chrm_sGD_results")
+    make_dirs(output_root_path)
+    make_dirs(output_sGD_root_path)
+
+    # you have change the root_path based on your own file path
+    # root_path = os.path.join("..", "data")
+    root_path=os.path.join("/","mnt","stor","ceph","hpcca","hpcc","jlnyb", "data")
+    # all chrm file folder path
+    chrm_file_folder_path = os.path.join(root_path, "all_chromsomes", "CHD_All_Chrm_variant_Files")
+    # all compressed chrm file folder path
+    chrm_file_compressed_folder_path = os.path.join(root_path, "all_chromsomes",
+                                                    "CHD_All_Chrm_variant_Files_compressed")
+    # if you don't have the folder, it will create a folder
+    make_dirs(chrm_file_compressed_folder_path)
+    file_list = os.listdir(chrm_file_folder_path)
+
+    # 1 Compressing variant data and make the data reading process more efficient,
+    # only need to run once, once you get the compressed data, don't need to run the code
+    logging.info("compressed data")
+    for file_name in tqdm(file_list):
+        compress_file(os.path.join(chrm_file_folder_path, file_name), chrm_file_compressed_folder_path,
+                             file_name.split(".")[0])
+
+    # 2 GDsearch
+    torch.cuda.empty_cache()
+    phenotype_file_path = os.path.join(root_path, "all_chromsomes", "CHD_Phenotype",
+                                       "Phenotype_KidsFirst_Index01_v4.csv")
+                                       # "Phenotype_exonic_01.csv")
+
+    file_list = [i.split(".")[0] for i in file_list]
+    start_time = time.time()
+    k = 1000
+    glgm_all, varIDs_all = GD_search_all_chromosome(file_list, chrm_file_compressed_folder_path, phenotype_file_path,output_root_path,
+                                                    device=device)
+
+    # save GDsearch all results
+    logging.info("get GDsearch results from all chromosome elapsed time:{}".format((time.time() - start_time)))
+
+    # get top k variants from all chrom
+    start_time = time.time()
+    top_k_variantsID, top_k_variants_tensor, topGD_index = get_top_variants_info_jin(file_list,
+                                                                                 chrm_file_compressed_folder_path,
+                                                                                 glgm_all, varIDs_all, device, k=k)
+    logging.info("get TOP k variants from all chromosome elapsed time:{}".format(time.time() - start_time))
+    # save top_k variants
+
+    df_top_k_variantsID=pd.DataFrame(top_k_variants_tensor.to("cpu").numpy(),index=top_k_variantsID)
+    df_top_k_variantsID.to_csv(os.path.join(output_root_path,"top_k_variants_pytorch.csv"))
 
     # 3 sGD search
     # An important flag to dictate whether using topGD or sGD as the driver for A0 group.
     subIDs_BP, traitIDs, traits_tensor = read_traitsF(phenotype_file_path)
     traits_tensor = traits_tensor.to(device=device)
-    file_list=os.listdir(chromosome_file_folder_path)
-
+    start_time=time.time()
     for file_name in tqdm(file_list):
-        subIDs, varIDs, variants_tensor, df_variants = read_variantsF(
-            os.path.join(chromosome_file_folder_path, file_name))
+        subIDs, varIDs, variants_tensor, df_variants = read_variantsF_efficient(chrm_file_compressed_folder_path,
+                                                                                file_name)
         variants_tensor = variants_tensor.to(device=device)
 
         use_oneTopGD = False
         element_run = []
-        start_time = datetime.now()
+
         logging.info("device:{}".format(device))
 
         for var in tqdm(varIDs):
-            res = lgMcal(top_variantsID, top_variants_tensor, variants_tensor, traits_tensor, var, use_oneTopGD,
+            res = lgMcal(top_k_variantsID, top_k_variants_tensor, variants_tensor, traits_tensor, var, use_oneTopGD,
                          topGD_index, device=device)
             element_run.append(res)
-        save_sGD_result(element_run,traitIDs,file_name)
+        save_sGD_result(element_run, traitIDs, file_name,output_sGD_root_path)
+
+    logging.info("use TOP k variants from all chromosome for sGD elapsed time:{}".format(time.time() - start_time))

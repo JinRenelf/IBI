@@ -53,12 +53,12 @@ def read_variantsF_efficient(variants_path_file):
     :param variants_size: if variants_size=None,select all the variants
     :return: subIDs, varIDs, variants_tensor, df  # list, list, array and dataframe
     """
-    varIDs_file = open(os.path.join(variants_path_file, "varIDs.txt"), "r")
+    varIDs_file = open(os.path.join(variants_path_file, "1M_varIDs.txt"), "r")
     varIDs = varIDs_file.read().split("\n")
-    subIDs_file = open(os.path.join(variants_path_file, "subIDs.txt"), "r")
+    subIDs_file = open(os.path.join(variants_path_file, "1M_subIDs.txt"), "r")
     subIDs = subIDs_file.read().split("\n")
     subIDs = list(int(x) for x in subIDs)
-    variants = np.load(os.path.join(variants_path_file, "data.npy"))
+    variants = np.load(os.path.join(variants_path_file, "1M_variants_value.npy"))
 
     A0 = np.ones(len(subIDs), dtype=np.int8)
     variants = np.row_stack((A0, variants))
@@ -221,7 +221,7 @@ def lgMcal(variants_tensor, traits_tensor, varID, use_oneTopGD, topGD_index, dev
             r1 = stats.spearmanr(variants_tensor[i, :].to("cpu").numpy(), variants_tensor[j, :].to("cpu").numpy())[0]
             r.append(r1)  # a vector of K
             k = k + 1
-    lgMv0_topGD = torch.tensor(lgMv0_topGD)
+    lgMv0_topGD = torch.tensor(lgMv0_topGD, device=device)
     r = torch.tensor(r)
 
     if use_oneTopGD:
@@ -313,18 +313,20 @@ if __name__ == '__main__':
     # 1 read data
     start_time = datetime.now()
     # root_path = os.path.join("..", "data", "1M")
-    root_path = os.path.join("..", "data", "90K")
-    # root_path = os.path.join("..", "data","test_data")
+    # root_path = os.path.join("..", "data", "90K")
+    root_path = os.path.join("..", "data","test_data")
     # root_path = os.path.join("")
     subIDs, varIDs, variants_tensor, df_variants = read_variantsF(
-        # os.path.join(root_path, 'chrm__KidsFirst_snp01_dominant1.csv'))
-    os.path.join(root_path, 'exonic_variants_01.csv'))
-    # os.path.join(root_path, 'variants_test.csv'))
+    # subIDs, varIDs, variants_tensor, df_variants = read_variantsF_efficient(
+    #     os.path.join(root_path))
+    #     os.path.join(root_path, 'chrm__KidsFirst_snp01_dominant1.csv'))
+    # os.path.join(root_path, 'exonic_variants_01.csv'))
+    os.path.join(root_path, 'variants_test.csv'))
 
     subIDs_BP, traitIDs, traits_tensor = read_traitsF(
-        # os.path.join(root_path, 'Phenotype__KidsFirst_Index01.csv'))
-    os.path.join(root_path, 'Phenotype_exonic_01.csv'))
-    # os.path.join(root_path, 'traits_test.csv'))
+        # os.path.join(root_path, 'Phenotype_KidsFirst_Index01.csv'))
+    # os.path.join(root_path, 'Phenotype_exonic_01.csv'))
+    os.path.join(root_path, 'traits_test.csv'))
 
     end_time = datetime.now()
     elapsed_time = (end_time - start_time).seconds
@@ -352,17 +354,19 @@ if __name__ == '__main__':
 
     # 3 sGD search
     # An important flag to dictate whether using topGD or sGD as the driver for A0 group.
-    # torch.cuda.empty_cache()
+    torch.cuda.empty_cache()
     # use_oneTopGD = False
-    # element_run = []
-    # start_time = datetime.now()
-    # logging.info("device:{}".format(device))
-    # try:
-    #     for var in tqdm(varIDs):
-    #         res = lgMcal(variants_tensor, traits_tensor, var, use_oneTopGD, topGD_index, device)
-    #         element_run.append(res)
-    # except Exception as e:
-    #     logging.error("Exception occurred", exc_info=True)
-    # logging.info("sGD elapsed time: {}s".format((datetime.now() - start_time).seconds))
-    #
-    # save_sGD_result(element_run)
+    use_oneTopGD = True
+    element_run = []
+    start_time = datetime.now()
+    logging.info("device:{}".format(device))
+    try:
+        for var in tqdm(varIDs):
+
+            res = lgMcal(variants_tensor, traits_tensor, var, use_oneTopGD, topGD_index, device)
+            element_run.append(res)
+    except Exception as e:
+        logging.error("Exception occurred", exc_info=True)
+    logging.info("sGD elapsed time: {}s".format((datetime.now() - start_time).seconds))
+
+    save_sGD_result(element_run)

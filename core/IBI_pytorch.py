@@ -52,12 +52,12 @@ def read_variantsF(variants_path_file, variants_size=None):
 #     :param variants_size: if variants_size=None,select all the variants
 #     :return: subIDs, varIDs, variants_tensor, df  # list, list, array and dataframe
 #     """
-#     varIDs_file = open(os.path.join(variants_path_file, "varIDs.txt"), "r")
+#     varIDs_file = open(os.path.join(variants_path_file, "1M_varIDs.txt"), "r")
 #     varIDs = varIDs_file.read().split("\n")
-#     subIDs_file = open(os.path.join(variants_path_file, "subIDs.txt"), "r")
+#     subIDs_file = open(os.path.join(variants_path_file, "1M_subIDs.txt"), "r")
 #     subIDs = subIDs_file.read().split("\n")
 #     subIDs = list(int(x) for x in subIDs)
-#     variants = np.load(os.path.join(variants_path_file, "data.npy"))
+#     variants = np.load(os.path.join(variants_path_file, "1M_variants_value.npy"))
 #
 #     A0 = np.ones(len(subIDs), dtype=np.int8)
 #     variants = np.row_stack((A0, variants))
